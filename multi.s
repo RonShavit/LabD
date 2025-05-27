@@ -1,0 +1,354 @@
+section .rodata
+    multi_print_fmt db '%02hhx',10,0 ; must add linefeed duo to flushing issues
+    number_debug_format db 'only: %X',10,0
+    dnumber_format db '1st: %d | 2nd: %d',10,0
+
+section .data
+    temp_struct dd 0
+    temp_buffer dd 0
+    x_struct: dw 6
+    x_number: db 0x70, 0x71, 0x72, 0x73, 0x74, 0x75,
+    y_struct: dw 4
+    y_number: db 100, 0xff, 9, 12
+    first_current dw 0
+    
+    
+
+
+section .text
+    global main
+    extern printf
+    extern malloc
+    extern free
+    extern stdin
+    extern fgets
+
+    add_multi:
+    push ebp
+    mov ebp, esp
+
+    xor eax, eax
+    xor ebx, ebx
+    
+    mov ecx, [esp+8] ;; ecx = first_multi
+    mov ax, [ecx]  ;; ax = first_multi.len
+
+
+    mov edx, [esp+12]    ;;edx = sec_multi
+    mov bx, [edx]   ;;bx = sec_multi.len
+
+
+    cmp eax, ebx
+    jg .first_bigger
+
+    xor edi, edi
+
+    mov edi, ecx
+    mov ecx, edx
+    mov edx, edi
+
+    xor edi, edi
+
+    mov edi, eax
+    xor eax, eax
+    mov eax, ebx
+    xor ebx, ebx
+    mov ebx, edi
+
+    jmp .first_bigger
+
+    .first_bigger:
+    
+    xor edi, edi
+    mov edi, eax
+    add edi, 2
+    xor esi, esi
+    mov esi, eax
+
+    pushad
+    push edi
+    call malloc
+    add esp, 4
+
+
+    mov [temp_struct], eax
+    popad
+    mov eax, esi
+
+    mov esi, [temp_struct]
+    mov [esi], ax
+    add esi,2 ;; esi = ret_multi.number
+    add ecx, 2 ;; ecx = 1st_multi.number
+    xor edi, edi
+    mov edi, edx; edi = 2nd_multi.number
+    add edi, 2
+    xor edx, edx;
+
+
+    ;;ret_struct[i] = cy+1st_multi[i]+2nd_multi[i]
+    .add_loop:
+    cmp bx, 0
+    jz .single_loop
+
+
+
+    xor dl, dl
+    mov dl, [ecx]
+    mov [first_current], ecx
+    xor ecx, ecx
+    mov cl, dl
+    xor dl, dl
+    mov dl, [edi]
+    add dl, dh
+    xor dh, dh
+    add dx, cx
+    mov [esi], dl
+
+    pushad
+    xor edx, edx
+    mov dl, [esi]
+
+    push edx
+    push number_debug_format
+    call printf
+    add esp, 8
+    popad
+
+    inc esi
+    inc edi
+    mov ecx, [first_current]
+    inc ecx
+
+
+
+    dec bx
+    dec ax
+    jmp .add_loop
+
+
+
+    .single_loop:
+    cmp ax, 0
+    jz .finish
+    
+    xor edx, edx
+    mov dl, [ecx]
+    mov [esi], dl
+
+    inc ecx
+    inc esi
+
+
+    dec ax
+    jmp .single_loop
+
+
+
+
+
+
+    
+    .finish:
+    xor eax, eax
+    mov eax, [temp_struct]
+
+    pop ebp
+    ret
+
+
+
+    get_multi:
+    push ebp
+    mov ebp, esp
+
+    xor ebx, ebx
+    mov ebx, 602
+    push ebx
+    call malloc ;eax = &buffer (malloc(600))
+
+    add esp, 4
+    mov [temp_buffer], eax
+
+    push dword [stdin]
+    mov ebx, 600
+    push ebx
+    push eax
+    call fgets
+    add esp, 12
+    ;; eax now contains the string read from stdin
+
+    xor edi, edi
+    mov ebx, eax
+    ;; get length of str read into edi
+    .get_len:
+
+    mov cl, [ebx]
+    cmp cl, 0
+    jz .got_len
+    cmp cl, 10
+    jz .got_len
+    inc edi
+    inc ebx
+    jmp .get_len
+
+    ;; allocate [edi]+2 bytes for the new struct
+    .got_len:
+    xor edx, edx
+    inc edx
+    and edx, edi
+    shr edi, 1
+    add edi, edx
+
+    mov ebx, eax
+    xor ecx, ecx
+    mov ecx, 2
+    add ecx, edi
+    mov ebx, eax
+
+    pushad
+    push ecx
+    call malloc ;;allocates memoty atop existing buffer TODO : fix
+    mov [temp_struct], eax
+    add esp, 4
+    popad
+    mov ebx, [temp_buffer]
+
+    mov eax, [temp_struct]
+    mov [eax], edi ;;mov [edi] into struct.len
+
+    mov ecx, [temp_struct]    ;ecx points to struct
+                    ;ebx point to buffer
+    add ecx, 2      ; ecx points to struct.number
+
+    .get_byte:
+        xor edx, edx
+        xor edi, edi
+        mov dx, [ebx]
+        cmp dl, 0
+        jz .finish
+        cmp dl, 10
+        jz .finish
+
+        cmp dl, '0'
+        jl .finish
+        cmp dl, '9'
+        jle .number1
+        jmp .letter1
+
+    .number1:
+        sub dx, 0x30
+        jmp .char2
+    .letter1:
+        sub dx, 0x57
+        jmp .char2
+
+    .char2:
+        cmp dh, 0
+        jz .single
+        cmp dh, 10
+        jz .single
+
+        cmp dh, '0'
+        jl .finish
+        cmp dh, '9'
+        jle .number2
+        jmp .letter2
+
+    .number2:
+        sub dx, 0x3000
+        jmp .insert
+    .letter2:
+        sub dx, 0x5700
+        jmp .insert
+    
+
+
+    .single:
+        xor dh, dh
+        mov dh, dl
+        xor dl,dl
+        jmp .insert
+
+    .insert:
+        shl dl, 4
+        add dl, dh
+        mov [ecx], dl
+        add ecx, 1
+
+
+
+
+
+    add ebx, 2
+    jmp .get_byte
+
+
+    
+    
+    
+
+
+
+    .finish:
+
+    pop ebp
+    ret
+    
+
+    print_multi:
+        push ebp
+        mov ebp, esp
+
+        mov edi, [esp+8]
+        xor ecx, ecx
+        mov cx,  [edi]
+
+        dec ecx
+        mov edx, edi
+        add edx, 2
+        add edx, ecx
+
+        .loop:
+            mov ebx, [edx]
+
+            pushad
+            push ebx
+            push multi_print_fmt
+            call printf
+            add esp, 8
+            popad
+            
+            cmp ecx,0
+            jz .end
+            dec ecx
+            dec edx
+            jmp .loop
+
+
+        .end:
+        pop ebp
+        ret
+
+    _start:
+    main:
+
+
+
+        
+        
+        push x_struct
+        push y_struct
+        call add_multi
+        add esp, 8
+
+        push eax
+        call print_multi
+        jmp exit.finish
+
+
+    
+    exit:
+        .finish:
+        mov eax, 1
+        mov ebx, 0
+        int 0x80
